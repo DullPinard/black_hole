@@ -35,10 +35,7 @@ import win32gui
 
 import torch
 if not torch.cuda.is_available():
-    raise RuntimeError(
-        "CUDA not available. Use black_hole_disk_cpu.py (numpy) or "
-        "black_hole_disk_cupy.py (CuPy) instead."
-    )
+    raise RuntimeError("CUDA-capable PyTorch required. See README.md.")
 
 
 # ---------- tunable parameters --------------------------------------------- #
@@ -86,6 +83,7 @@ class Background:
         self.h = 0
         self.version = 0
         self._stop = threading.Event()
+        self._frozen = threading.Event()
 
     def _push(self, rgb):
         t = torch.from_numpy(rgb).to('cuda', non_blocking=True)
@@ -102,12 +100,16 @@ class Background:
     def start(self):
         threading.Thread(target=self._loop, daemon=True).start()
 
+    def freeze(self):  self._frozen.set()
+    def thaw(self):    self._frozen.clear()
+
     def _loop(self):
         with mss.mss() as sct:
             mon = sct.monitors[1]
             while not self._stop.is_set():
-                raw = np.array(sct.grab(mon))
-                self._push(np.ascontiguousarray(raw[:, :, 2::-1]))
+                if not self._frozen.is_set():
+                    raw = np.array(sct.grab(mon))
+                    self._push(np.ascontiguousarray(raw[:, :, 2::-1]))
                 time.sleep(BG_INTERVAL)
 
     def stop(self):
@@ -320,6 +322,15 @@ def main():
         if r_now and not prev_r:
             recordable = not recordable
             set_recordable(hwnd, recordable)
+            # When the widget becomes visible to capture APIs, the
+            # background grabber would otherwise re-record the BH itself
+            # — feeding warped output back into the lens and quickly
+            # collapsing the image to black. Lock the desktop snapshot
+            # while in record mode and resume live capture on toggle off.
+            if recordable:
+                bg.freeze()
+            else:
+                bg.thaw()
         if a_now and not prev_a:
             drift = not drift
             if drift:
