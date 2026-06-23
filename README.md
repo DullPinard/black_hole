@@ -38,85 +38,177 @@ python main.py
 
 ## 物理原理
 
-### 引力透镜：史瓦西薄透镜近似
+### 从爱因斯坦场方程到光线偏折
 
-弱场极限下，质量 M 的黑洞对掠过的光线产生偏折角
+广义相对论的核心是爱因斯坦场方程
 
-```
-α = 4 G M / (c² b) = 2 r_s / b
-```
+$$
+R_{\mu\nu} - \tfrac{1}{2} g_{\mu\nu} R + \Lambda g_{\mu\nu}
+= \frac{8\pi G}{c^4} T_{\mu\nu}
+$$
 
-其中 `b` 是冲击参数，`r_s` 是史瓦西半径。把这个偏折角搬到屏幕上，
-得到爱因斯坦薄透镜方程
+把它在球对称真空（$T_{\mu\nu} = 0,\ \Lambda = 0$）下求解，得到的就是
+Schwarzschild 度规
 
-```
-β = θ − θ_E² / θ
-```
+$$
+\mathrm{d}s^2 = -\left(1 - \frac{r_s}{r}\right) c^2 \mathrm{d}t^2
+              + \left(1 - \frac{r_s}{r}\right)^{-1} \mathrm{d}r^2
+              + r^2 \left(\mathrm{d}\theta^2 + \sin^2\theta\, \mathrm{d}\varphi^2\right)
+$$
 
-`θ_E` 是爱因斯坦角半径。在像素坐标里令 `r_E = θ_E` 直接当作"事件
-视界半径"，则像素 `(x, y)` 看到的"远端原图"位置在同方向上的
+其中 $r_s = 2GM / c^2$ 是史瓦西半径。让光子按零测地线 $\mathrm{d}s = 0$
+运动，并令冲击参数 $b$（即光线在无穷远处距黑洞中心的最近距离），积分
 
-```
-r_src = r − r_E² / r
-```
+$$
+\varphi(b) = 2 \int_{r_0}^{\infty}
+   \frac{\mathrm{d}r}{r^2 \sqrt{\frac{1}{b^2} - \frac{1}{r^2}\!\left(1 - \frac{r_s}{r}\right)}}
+   - \pi
+$$
 
-`r ≤ r_E` 时 `r_src ≤ 0`，对应被光子球俘获的射线，渲染成纯黑视界
-阴影。其余像素按 `(src_dx, src_dy) = d · (r_src / r)` 反向采样桌面
-背景，就得到了引力扭曲。
+在弱场极限 $b \gg r_s$ 下展开到首阶，得到经典的偏折角
+
+$$
+\alpha(b) = \frac{4 G M}{c^2 b} = \frac{2 r_s}{b}
+$$
+
+### 薄透镜方程
+
+把黑洞当作几何上无厚度的"透镜面"，源平面、透镜面、观察者三层之间用
+角度变量 $\beta$（源真实角位置）、$\theta$（观察者看到的角位置）联立
+
+$$
+\beta = \theta - \frac{D_{LS}}{D_S} \alpha(D_L \theta)
+$$
+
+代入 $\alpha = 2 r_s / b$ 并令爱因斯坦角半径
+
+$$
+\theta_E = \sqrt{\frac{2 r_s D_{LS}}{D_L D_S}}
+$$
+
+就得到这个项目实际使用的"透镜方程"
+
+$$
+\boxed{\;\beta = \theta - \frac{\theta_E^2}{\theta}\;}
+$$
+
+它有一对解 $\theta_{\pm}$；本项目只取直接路径分支，所以在屏幕像素
+半径 $r$ 上写成
+
+$$
+r_{\text{src}}(r) = r - \frac{r_E^2}{r}
+$$
+
+`r ≤ r_E` 区域 $r_{\text{src}} \le 0$，对应被光子球俘获的光线，渲染
+成纯黑事件视界阴影。其余像素的方向不变，距离收缩：
+
+$$
+\bigl(s_x,\, s_y\bigr) = \bigl(d_x,\, d_y\bigr) \cdot \frac{r_{\text{src}}}{r}
+$$
+
+GPU 直接按这个偏移做反向纹理采样。
 
 ### 边缘衰减窗
 
-纯 1/r 偏折在远处仍有微弱形变，会让圆盘边缘和桌面无法完美对齐。
-为此在偏折项上乘一个二次衰减窗
+纯 $1/r$ 偏折在远处仍有微弱形变，会让圆盘边缘与桌面无法完美对齐。
+在偏折项上乘一个二次衰减窗
 
-```
-win(r) = (1 − t)²,    t = clamp((r − r_E) / (r_out − r_E), 0, 1)
-deflect(r) = (r_E² / r) · win(r)
-```
+$$
+w(r) = (1 - t)^2,\quad
+t = \mathrm{clamp}\!\left(\frac{r - r_E}{r_{\text{out}} - r_E},\; 0,\; 1\right)
+$$
 
-`r_out` 处偏折严格归零，外圈像素采样位置就是自身，圆盘外沿与桌面
-完美对齐。`r_out` 跟随 `r_E` 等比例缩放（`RENDER_SCALE` 倍），所以
+$$
+\mathrm{deflect}(r) = \frac{r_E^2}{r} \cdot w(r)
+$$
+
+$r_{\text{out}}$ 处偏折严格归零，圆盘外沿与桌面像素一一对应。
+$r_{\text{out}}$ 跟随 $r_E$ 等比例缩放（`RENDER_SCALE` 倍），所以
 缩放过程中视觉边界永远稳定。
 
 ### 吸积盘：俯视角动态发光场
 
 俯视吸积盘（face-on）的密度场用了几个简单要素叠加：
 
-1. **开普勒差速旋转**。轨道角速度 `ω(ρ) = ω_0 · (r_in / ρ)^1.5`，
-   内圈转得比外圈快，方位角相位 `θ' = θ − ω · t`。
-2. **2π 闭合的 FBM 噪声**。把 `(cos θ', sin θ') · A(ρ)` 当作输入
-   坐标喂给 fractal-Brownian-motion，转一整圈回到起点，避免之前在
-   `θ = ±π` 处的接缝。
-3. **域畸变（domain warp）**。先用一层小尺度 FBM 抖动主噪声的
-   查询坐标，让条带不是规则的圆环而是不规则的湍流烟雾。
-4. **内沿亮环 + 公转热斑**。`r ≈ r_E` 处叠一个高斯亮带模拟内边界
-   等离子体；再加一个绕中心公转的高斯热斑做局部亮度调制。
-5. **温度梯度配色**。颜色由密度自身驱动：低密度橙红、中等密度黄、
-   高密度趋近黄白；用 `α = (d/D_peak)^0.65 · α_max` 做半透明 alpha
-   合成，最亮处也保留 ~18% 透明度，所以背景不会被糊死。
+1. **开普勒差速旋转**。轨道角速度
 
-最终颜色用经典 Porter–Duff over 合成：
+   $$
+   \omega(\rho) = \omega_0 \left(\frac{r_{\text{in}}}{\rho}\right)^{3/2}
+   $$
 
-```
-color = (1 − α) · background + α · disk_rgb
-```
+   内圈转得比外圈快，方位角相位 $\theta' = \theta - \omega t$。
+
+2. **2π 闭合的 FBM 噪声**。把 $(\cos\theta',\,\sin\theta')\cdot A(\rho)$
+   当作输入坐标喂给 fractal-Brownian-motion
+
+   $$
+   F(\mathbf p) = \sum_{k=0}^{N-1} a^k \cos(f^k p_x + 1.7 k)
+                                    \sin(f^k p_y - 0.9 k)
+   $$
+
+   转一整圈回到起点，避免 $\theta = \pm\pi$ 处的接缝。
+
+3. **域畸变（domain warp）**。先用一层小尺度 FBM 抖动主噪声的查询
+   坐标 $\mathbf p \to \mathbf p + A_w (F(\mathbf p) - 0.5)$，让条带
+   不是规则的圆环而是不规则的湍流烟雾。
+
+4. **内沿亮环 + 公转热斑**。$r \approx r_E$ 处叠一个高斯亮带模拟
+   内边界等离子体；再加一个绕中心公转的高斯热斑做局部亮度调制。
+
+5. **温度梯度配色 + alpha 合成**。颜色由密度自身驱动（密度→温度→
+   黑体色），不透明度
+
+   $$
+   \alpha = \left(\frac{d}{D_{\text{peak}}}\right)^{0.65}\!\cdot\, \alpha_{\max}
+   $$
+
+   最亮处也保留 ~18% 透明度，所以背景不会被糊死。
+
+最终颜色用经典 Porter–Duff over 合成
+
+$$
+\mathbf c = (1 - \alpha)\, \mathbf c_{\text{bg}} + \alpha\, \mathbf c_{\text{disk}}
+$$
 
 ### 漂移：势能 + 动能的弹跳模型
 
-按 `A` 时给黑洞一个均匀随机方向的初速 `v₀`。屏幕内运动在四面墙
-合成的反斥势 V 中演化：
+按 `A` 时给黑洞一个均匀随机方向的初速 $\mathbf v_0$。屏幕内运动在
+四面墙合成的反斥势 V 中演化
 
-```
-V(x, y) = K · (1/x + 1/(W − x) + 1/y + 1/(H − y))
-F = −∇V → 1/d² 的反斥力
-```
+$$
+V(x, y) = K \left(\frac{1}{x} + \frac{1}{W - x}
+                 + \frac{1}{y} + \frac{1}{H - y}\right)
+$$
 
-用 velocity-Verlet 辛积分推进，这套积分器守恒能量，所以黑洞会在
-四壁之间不断弹跳，路径就像台球——这是"反射"的来源。
+$$
+\mathbf F = -\nabla V
+\;\Longrightarrow\;
+F_x = K \left(\frac{1}{x^2} - \frac{1}{(W - x)^2}\right),\quad
+F_y = K \left(\frac{1}{y^2} - \frac{1}{(H - y)^2}\right)
+$$
 
-如果意外飞出屏幕，加速度切换为指向中心的恒定矢量 `OUT_PULL`，同时
-对速度乘以 `OUT_DAMPING^dt` 衰减——能量被人为拿走，黑洞被拽回
-屏幕内并在内圈势阱里收敛。
+用 velocity-Verlet 辛积分推进
+
+$$
+\begin{aligned}
+\mathbf r_{n+1} &= \mathbf r_n + \mathbf v_n\, \Delta t
+                  + \tfrac{1}{2}\, \mathbf a_n\, \Delta t^2 \\
+\mathbf v_{n+1} &= \mathbf v_n
+                  + \tfrac{1}{2}\, \bigl(\mathbf a_n + \mathbf a_{n+1}\bigr)\, \Delta t
+\end{aligned}
+$$
+
+这套积分器守恒能量 $E = \tfrac{1}{2} m |\mathbf v|^2 + V(\mathbf r)$，
+所以黑洞会在四壁之间不断弹跳，路径就像台球——这是"反射"的来源。
+
+如果意外飞出屏幕，加速度切换为指向中心的恒定矢量 $\mathbf a = a_0\,\hat{\mathbf c}$
+（$\hat{\mathbf c}$ 是单位回中心向量），同时对速度乘以指数阻尼
+
+$$
+\mathbf v \leftarrow \mathbf v \cdot \gamma^{\Delta t},\quad \gamma < 1
+$$
+
+能量被人为拿走，黑洞被拽回屏幕内并在内圈势阱里收敛。
 
 ## 实现要点
 
@@ -160,6 +252,12 @@ CPU 主线程只做窗口管理和事件循环，1080p / 1440p 全屏 60 FPS 满
 从所有 OS 截图通道隐藏，避免后台抓屏线程把自己拍进去造成无限
 反馈。按 `R` 摘掉这个 flag 之后 OBS / NVIDIA Shadowplay 等录屏
 工具就能录到了。
+
+**注意**：进入录屏模式时背景会被冻结到当前快照。原因很简单——一旦
+窗口对截图通道可见，`mss` 抓到的画面里就含黑洞自己，再喂给透镜会
+把变形结果再扭一次，几帧之内就会塌成一团黑。所以 `R` 切到录屏
+模式时主程序会调用 `bg.freeze()` 锁住上一次背景；切回隐藏时
+`bg.thaw()` 恢复实时采样。
 
 ## 可调参数
 
