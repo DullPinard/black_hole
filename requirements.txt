@@ -1,0 +1,10 @@
+numpy>=1.24
+mss>=9.0
+pygame>=2.5
+pywin32>=306
+
+# torch with CUDA must come from the PyTorch index, not PyPI:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# Pick the cuXXX matching your installed CUDA toolkit
+# (cu124 for 12.4, cu121 for 12.1, cu118 for 11.8).
+torch>=2.0
