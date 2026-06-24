@@ -40,7 +40,7 @@ if not torch.cuda.is_available():
 
 # ---------- tunable parameters --------------------------------------------- #
 EINSTEIN_RADIUS  = 90.0
-RENDER_SCALE     = 3.83
+RENDER_SCALE     = 200
 COLORKEY         = (255, 0, 255)
 TARGET_FPS       = 60
 BG_INTERVAL      = 0.01
@@ -260,7 +260,7 @@ def main():
 
     def relens():
         nonlocal r_out
-        r_out = min(r_e * RENDER_SCALE, float(min(W, H)) * 0.5 - 4.0)
+        r_out = min(r_e * RENDER_SCALE, float(min(W, H)) * 1.5 - 4.0)
         (state['sdx'], state['sdy'], state['shadow'], state['outside'],
          state['dx'], state['dy'], state['r'], state['win']) = \
             precompute_lens(W, H, cx, cy, r_e, r_out)
